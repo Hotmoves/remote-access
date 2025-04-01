@@ -8,77 +8,118 @@
             border: 1px solid black;
             width: 100%;
             height: auto;
+            display: none; /* Hide canvas until authenticated */
+        }
+        #auth {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        #error {
+            color: red;
+            display: none;
         }
     </style>
 </head>
 <body>
-<canvas id="screen"></canvas>
-<script>
-    const canvas = document.getElementById('screen');
-    const ctx = canvas.getContext('2d');
-    const ws = new WebSocket('ws://localhost:8080'); // Replace with your PC's IP if not local
+    <div id="auth">
+        <h2>Enter Password</h2>
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="connect()">Connect</button>
+        <p id="error">Incorrect password. Please try again.</p>
+    </div>
+    <canvas id="screen"></canvas>
+    <script>
+        const canvas = document.getElementById('screen');
+        const ctx = canvas.getContext('2d');
+        const authDiv = document.getElementById('auth');
+        const errorMsg = document.getElementById('error');
+        let ws;
 
-    // Resize canvas to match screen
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+        // Resize canvas to match screen
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-    // Enable pointer lock on click
-    canvas.addEventListener('click', () => {
-        canvas.requestPointerLock();
-    });
+        function connect() {
+            const password = document.getElementById('password').value;
+            ws = new WebSocket('wss://abc123.ngrok.io'); // Replace with your ngrok URL
 
-    // Handle pointer lock state
-    document.addEventListener('pointerlockchange', () => {
-        if (document.pointerLockElement === canvas) {
-            console.log('Pointer locked');
-        } else {
-            console.log('Pointer unlocked');
-        }
-    });
+            ws.onopen = () => {
+                console.log('Connected to server');
+                // Send the password to the server
+                ws.send(`PASSWORD:${password}`);
+            };
 
-    // Handle mouse movement
-    canvas.addEventListener('mousemove', (e) => {
-        if (document.pointerLockElement === canvas) {
-            const x = e.clientX;
-            const y = e.clientY;
-            ws.send(`MOUSE_MOVE:${x},${y}`);
-        }
-    });
+            ws.onmessage = (event) => {
+                const message = event.data;
+                if (message === 'AUTH_SUCCESS') {
+                    // Password correct, show canvas and hide auth
+                    authDiv.style.display = 'none';
+                    canvas.style.display = 'block';
+                    errorMsg.style.display = 'none';
+                    startRemoteDesktop();
+                } else if (message === 'AUTH_FAILED') {
+                    // Password incorrect, show error
+                    errorMsg.style.display = 'block';
+                    ws.close();
+                } else if (message.startsWith('IMAGE:')) {
+                    const base64Image = message.split('IMAGE:')[1];
+                    const img = new Image();
+                    img.src = 'data:image/jpeg;base64,' + base64Image;
+                    img.onload = () => {
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    };
+                }
+            };
 
-    // Handle mouse clicks
-    canvas.addEventListener('mousedown', () => {
-        if (document.pointerLockElement === canvas) {
-            ws.send('MOUSE_CLICK:');
-        }
-    });
-
-    // Handle keyboard input
-    document.addEventListener('keydown', (e) => {
-        if (document.pointerLockElement === canvas) {
-            ws.send(`KEY_PRESS:${e.key}`);
-        }
-    });
-
-    // Receive screen updates
-    ws.onmessage = (event) => {
-        const message = event.data;
-        if (message.startsWith('IMAGE:')) {
-            const base64Image = message.split('IMAGE:')[1];
-            const img = new Image();
-            img.src = 'data:image/jpeg;base64,' + base64Image;
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ws.onclose = () => {
+                console.log('Disconnected from server');
+                // Show auth div again if disconnected
+                authDiv.style.display = 'block';
+                canvas.style.display = 'none';
             };
         }
-    };
 
-    ws.onopen = () => {
-        console.log('Connected to server');
-    };
+        function startRemoteDesktop() {
+            // Enable pointer lock on click
+            canvas.addEventListener('click', () => {
+                canvas.requestPointerLock();
+            });
 
-    ws.onclose = () => {
-        console.log('Disconnected from server');
-    };
-</script>
+            // Handle pointer lock state
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === canvas) {
+                    console.log('Pointer locked');
+                } else {
+                    console.log('Pointer unlocked');
+                }
+            });
+
+            // Handle mouse movement
+            canvas.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === canvas) {
+                    const x = e.clientX;
+                    const y = e.clientY;
+                    ws.send(`MOUSE_MOVE:${x},${y}`);
+                }
+            });
+
+            // Handle mouse clicks
+            canvas.addEventListener('mousedown', () => {
+                if (document.pointerLockElement === canvas) {
+                    ws.send('MOUSE_CLICK:');
+                }
+            });
+
+            // Handle keyboard input
+            document.addEventListener('keydown', (e) => {
+                if (document.pointerLockElement === canvas) {
+                    ws.send(`KEY_PRESS:${e.key}`);
+                }
+            });
+        }
+    </script>
 </body>
 </html>
